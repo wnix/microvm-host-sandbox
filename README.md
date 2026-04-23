@@ -8,6 +8,18 @@ The **guest** edits its own NixOS config in a **separate** git repository, bind-
 
 1. **Security:** The guest must not see the VM layout, port forwards, or host paths in this repo. Only the guest-config repo is shared into the guest.
 2. **Lifecycle:** You commit to this repo on the host; the agent can `git commit` / `git push` the guest config from inside the VM.
+3. **Pluggable guest:** Because the guest is just a git submodule, you can swap it for any NixOS flake that follows the wiring contract. Different teams or use-cases get different starting points with zero changes to the host.
+
+## Guest templates
+
+The host repo is a fixed hypervisor shell. The **guest** is what changes between projects. Pick a starting point:
+
+| Template | What's included | Status |
+|---|---|---|
+| [`wnix/microvm-guest-template`](https://github.com/wnix/microvm-guest-template) | Base NixOS guest: git, zsh, dev tools, nix flakes, `agent` user | ✅ available |
+| `wnix/microvm-guest-claude` | Everything above + Claude Code, OpenClaw, SKILL files pre-configured | 🚧 coming soon |
+
+Adding a new template is just a `git submodule add` — the QEMU hardware layer never changes.
 
 ## Setup — two paths to a running sandbox
 
@@ -21,12 +33,14 @@ mkdir my-sandbox-host && cd my-sandbox-host
 nix flake init --template github:wnix/microvm-host-sandbox#agent-sandbox
 git init && git add -A && git commit -m "init host"
 
-# 2. Bootstrap the guest config repo (separate repo, separate remote)
+# 2. Pick a guest template and bootstrap it as its own repo
 mkdir ../my-sandbox-guest && cd ../my-sandbox-guest
-nix flake init --template github:wnix/microvm-guest-template
+nix flake init --template github:wnix/microvm-guest-template   # base
+# -- or, once available --
+# nix flake init --template github:wnix/microvm-guest-claude   # + Claude Code / OpenClaw
 git init && git add -A && git commit -m "init guest"
 
-# 3. Push both to your own remotes, then wire them as a submodule:
+# 3. Push both to your own remotes, then wire guest as submodule of host:
 cd ../my-sandbox-host
 git submodule add git@github.com:my-org/my-sandbox-guest.git sandbox-guest-config
 git add .gitmodules sandbox-guest-config
@@ -111,20 +125,45 @@ Anyone who clones the host repo with `--recurse-submodules` gets an exact, repro
 - `vm/default.nix` — wires the above and one-shot `agent-bootstrap`.
 - `templates/guest-config/` — starter **guest** flake; copy to a new repo, do **not** bind-mount this template directory for production.
 
-## Architecture (data flow)
+## Architecture
 
-```
-[ Host: your machine ]
-  nix run .#sandbox  ->  QEMU (microvm-run)
-       |                      |
-       |  9p ro  /nix/store  ->  lower layer of /nix overlay
-       |  9p rw  nix .rw      ->  ext4 image (new store paths, survives reboots)
-       |  9p rw  guest repo   ->  /home/agent/system-config (git, flakes)
-  NOT exposed to guest:  this repo's config.nix, vm/, host flake
+```mermaid
+%%{init: {"flowchart": {"htmlLabels": false}} }%%
+flowchart TD
+    subgraph GH["GitHub — pick a guest template"]
+        GT0["wnix/microvm-guest-template\nbase: git · zsh · dev tools · nix flakes"]
+        GT1["wnix/microvm-guest-claude  (coming soon)\n+ Claude Code · OpenClaw · SKILL files"]
+        GTN["your-org/custom-guest\nany NixOS flake that follows the wiring contract"]
+    end
+
+    subgraph Local["Host machine  —  my-sandbox-host/"]
+        FLAKE["flake.nix + config.nix + vm/\nhypervisor layer — never exposed to guest"]
+        SUB["sandbox-guest-config/\ngit submodule · pinned commit"]
+        IMG["nix-rw-store.img\next4 image · persists across reboots"]
+    end
+
+    GH -->|"nix flake init --template\nor GitHub template + fork"| SUB
+    FLAKE -->|"nix run .#sandbox\nauto-detects submodule"| VM
+
+    subgraph VM["QEMU  —  NixOS guest"]
+        RO["/nix/.ro-store\n9p read-only\n← host /nix/store"]
+        RW["/nix/.rw-store\n9p read-write\n← nix-rw-store.img"]
+        OV["/nix/store\noverlayfs\nlower = .ro-store · upper = .rw-store"]
+        SC["/home/agent/system-config\n9p read-write\n← sandbox-guest-config/"]
+        RO --> OV
+        RW --> OV
+    end
+
+    IMG -->|"9p share  rw"| RW
+    SUB -->|"9p share  rw"| SC
+
+    SC -->|"agent: git commit · git push\nfrom inside the VM"| SUB
+    SUB -->|"host: git add sandbox-guest-config\npin submodule to new HEAD"| FLAKE
 ```
 
-- **Root filesystem** in the guest is tmpfs; **persistent** state is: the overlay upper on `/nix/.rw-store`, the bind-mounted guest config, and any `vm.hostMounts` you add.
-- **Nix store overlay:** The host’s `/nix/store` is shared read-only and stacked with a writable ext4 image — the guest nix-daemon can build; the host store is never written by the guest.
+- **Root filesystem** is tmpfs; persistent state lives in `/nix/.rw-store` (ext4 image), the bind-mounted guest config, and any `vm.hostMounts`.
+- **Nix store overlay:** host `/nix/store` is shared read-only; packages built inside the guest land in the rw upper layer — the host store is never written.
+- **Guest templates are pluggable:** the 9p wiring (share tags, volume name, port forwards) is the only contract between host and guest. Swap the submodule for any template that honours it.
 
 ## Configuration notes
 
@@ -165,7 +204,6 @@ The **host** copy is what QEMU actually runs. The **guest** copy is what `nixos-
 ### What can safely differ
 
 - Comments, ordering, and any option that does **not** affect the kernel mount table or the QEMU command line.
-- `vm.guestConfigPath` — only used by the host to locate the 9p source directory; the guest ignores it.
 - `vm.agentSshKeys` / `vm.hostNixStorePath` — guest-only or host-only semantics; no cross-side contract.
 
 ### Change procedure

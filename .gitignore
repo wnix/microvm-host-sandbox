@@ -1,3 +1,4 @@
 result
 result-*
 nix-rw-store.img
+sandbox-guest-config/

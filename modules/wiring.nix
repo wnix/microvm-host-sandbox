@@ -1,11 +1,22 @@
-# Parameterised microvm stanza. Copy this file to the guest-config repo
-# (or use templates/guest-config/) and keep in sync with the host: tags,
-# port lists, and volume name must match what `nix run .#sandbox` / microvm-run uses.
-{ lib, userConfig, guestPath }:
+# Single source of truth for microvm 9p shares, volumes, and port forwards.
+# Used by the host nixosConfiguration (declaredRunner) and by the guest flake
+# (via inputs.microvmHost.nixosModules.wiring) so tags/mountPoints always match.
+#
+# On the hypervisor host, set MICROVM_GUEST_CONFIG and MICROVM_HOST_FLAKE (absolute paths).
+# When evaluating inside the guest without those (e.g. nixos-rebuild without wrapper),
+# placeholder source paths are used for shares; only tags + mountPoints affect guest mounts.
+{ lib, userConfig, ... }:
 let
   p = userConfig.vm;
   diskMiB = p.diskSizeGiB * 1024;
   nixLower = p.hostNixStorePath;
+  guestPathEnv = builtins.getEnv "MICROVM_GUEST_CONFIG";
+  hostFlakeEnv = builtins.getEnv "MICROVM_HOST_FLAKE";
+  # `source` is only consumed by QEMU on the host; guest fileSystems use `tag` + mountPoint.
+  guestShareSource =
+    if guestPathEnv != "" then guestPathEnv else "/.microvm-placeholder-guest-cfg-source";
+  hostFlakeShareSource =
+    if hostFlakeEnv != "" then hostFlakeEnv else "/.microvm-placeholder-host-flake-source";
   forwardPorts = map
     (x: {
       from = "host";
@@ -39,9 +50,16 @@ in
       {
         tag = "guest-cfg";
         proto = "9p";
-        source = guestPath;
+        source = guestShareSource;
         mountPoint = "/home/agent/system-config";
         readOnly = false;
+      }
+      {
+        tag = "microvm-host";
+        proto = "9p";
+        source = hostFlakeShareSource;
+        mountPoint = "/run/microvm-host";
+        readOnly = true;
       }
     ] ++ lib.lists.imap0
       (i: m: {

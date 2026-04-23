@@ -1,11 +1,135 @@
 {
   "nodes": {
+    "guestConfig": {
+      "inputs": {
+        "microvm": "microvm",
+        "microvmHost": "microvmHost",
+        "nixpkgs": "nixpkgs_3"
+      },
+      "locked": {
+        "lastModified": 1776933372,
+        "narHash": "sha256-sCcUEGtoytZ60glzXn1TRndlsw4XC74q0YH9J7pq8vA=",
+        "path": "/home/basti/daten/Entwicklung/micro-vms/sandbox-guest-config",
+        "type": "path"
+      },
+      "original": {
+        "owner": "wnix",
+        "repo": "microvm-guest-template",
+        "type": "github"
+      }
+    },
+    "guestConfig_2": {
+      "inputs": {
+        "microvm": "microvm_2",
+        "nixpkgs": "nixpkgs"
+      },
+      "locked": {
+        "lastModified": 1776929424,
+        "narHash": "sha256-5YtUENSKmARGz/bRhzykifHouoM1dV6M20IFUzOTAfA=",
+        "owner": "wnix",
+        "repo": "microvm-guest-template",
+        "rev": "0fbd678db59347295d0bbbd86ae5a6f68ba6aebc",
+        "type": "github"
+      },
+      "original": {
+        "owner": "wnix",
+        "repo": "microvm-guest-template",
+        "type": "github"
+      }
+    },
     "microvm": {
+      "inputs": {
+        "nixpkgs": [
+          "guestConfig",
+          "nixpkgs"
+        ],
+        "spectrum": "spectrum"
+      },
+      "locked": {
+        "lastModified": 1776340739,
+        "narHash": "sha256-s4FDictJlPtY6Shd6scG5hgrDMiHth09+svtvTA5NLA=",
+        "owner": "microvm-nix",
+        "repo": "microvm.nix",
+        "rev": "2f2f62fdfdca2750e3399f66bd03986ab967e5ca",
+        "type": "github"
+      },
+      "original": {
+        "owner": "microvm-nix",
+        "repo": "microvm.nix",
+        "type": "github"
+      }
+    },
+    "microvmHost": {
+      "inputs": {
+        "guestConfig": "guestConfig_2",
+        "microvm": "microvm_3",
+        "nixpkgs": "nixpkgs_2"
+      },
+      "locked": {
+        "lastModified": 1776933264,
+        "narHash": "sha256-rDcA5HrSALNIqMxqcbJt2blEzfEBGY3VZqD+R2jV/f0=",
+        "path": "/home/basti/daten/Entwicklung/micro-vms/micro-vm-template",
+        "type": "path"
+      },
+      "original": {
+        "owner": "wnix",
+        "repo": "microvm-host-sandbox",
+        "type": "github"
+      }
+    },
+    "microvm_2": {
+      "inputs": {
+        "nixpkgs": [
+          "guestConfig",
+          "microvmHost",
+          "guestConfig",
+          "nixpkgs"
+        ],
+        "spectrum": "spectrum_2"
+      },
+      "locked": {
+        "lastModified": 1776340739,
+        "narHash": "sha256-s4FDictJlPtY6Shd6scG5hgrDMiHth09+svtvTA5NLA=",
+        "owner": "microvm-nix",
+        "repo": "microvm.nix",
+        "rev": "2f2f62fdfdca2750e3399f66bd03986ab967e5ca",
+        "type": "github"
+      },
+      "original": {
+        "owner": "microvm-nix",
+        "repo": "microvm.nix",
+        "type": "github"
+      }
+    },
+    "microvm_3": {
+      "inputs": {
+        "nixpkgs": [
+          "guestConfig",
+          "microvmHost",
+          "nixpkgs"
+        ],
+        "spectrum": "spectrum_3"
+      },
+      "locked": {
+        "lastModified": 1776340739,
+        "narHash": "sha256-s4FDictJlPtY6Shd6scG5hgrDMiHth09+svtvTA5NLA=",
+        "owner": "microvm-nix",
+        "repo": "microvm.nix",
+        "rev": "2f2f62fdfdca2750e3399f66bd03986ab967e5ca",
+        "type": "github"
+      },
+      "original": {
+        "owner": "microvm-nix",
+        "repo": "microvm.nix",
+        "type": "github"
+      }
+    },
+    "microvm_4": {
       "inputs": {
         "nixpkgs": [
           "nixpkgs"
         ],
-        "spectrum": "spectrum"
+        "spectrum": "spectrum_4"
       },
       "locked": {
         "lastModified": 1776340739,
@@ -37,13 +161,110 @@
         "type": "github"
       }
     },
+    "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1776548001,
+        "narHash": "sha256-ZSK0NL4a1BwVbbTBoSnWgbJy9HeZFXLYQizjb2DPF24=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "b12141ef619e0a9c1c84dc8c684040326f27cdcc",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_3": {
+      "locked": {
+        "lastModified": 1776548001,
+        "narHash": "sha256-ZSK0NL4a1BwVbbTBoSnWgbJy9HeZFXLYQizjb2DPF24=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "b12141ef619e0a9c1c84dc8c684040326f27cdcc",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_4": {
+      "locked": {
+        "lastModified": 1776548001,
+        "narHash": "sha256-ZSK0NL4a1BwVbbTBoSnWgbJy9HeZFXLYQizjb2DPF24=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "b12141ef619e0a9c1c84dc8c684040326f27cdcc",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
-        "microvm": "microvm",
-        "nixpkgs": "nixpkgs"
+        "guestConfig": "guestConfig",
+        "microvm": "microvm_4",
+        "nixpkgs": "nixpkgs_4"
       }
     },
     "spectrum": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1772189877,
+        "narHash": "sha256-i1p90Rgssb//aNiTDFq46ZG/fk3LmyRLChtp/9lddyA=",
+        "ref": "refs/heads/main",
+        "rev": "fe39e122d898f66e89ffa17d4f4209989ccb5358",
+        "revCount": 1255,
+        "type": "git",
+        "url": "https://spectrum-os.org/git/spectrum"
+      },
+      "original": {
+        "type": "git",
+        "url": "https://spectrum-os.org/git/spectrum"
+      }
+    },
+    "spectrum_2": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1772189877,
+        "narHash": "sha256-i1p90Rgssb//aNiTDFq46ZG/fk3LmyRLChtp/9lddyA=",
+        "ref": "refs/heads/main",
+        "rev": "fe39e122d898f66e89ffa17d4f4209989ccb5358",
+        "revCount": 1255,
+        "type": "git",
+        "url": "https://spectrum-os.org/git/spectrum"
+      },
+      "original": {
+        "type": "git",
+        "url": "https://spectrum-os.org/git/spectrum"
+      }
+    },
+    "spectrum_3": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1772189877,
+        "narHash": "sha256-i1p90Rgssb//aNiTDFq46ZG/fk3LmyRLChtp/9lddyA=",
+        "ref": "refs/heads/main",
+        "rev": "fe39e122d898f66e89ffa17d4f4209989ccb5358",
+        "revCount": 1255,
+        "type": "git",
+        "url": "https://spectrum-os.org/git/spectrum"
+      },
+      "original": {
+        "type": "git",
+        "url": "https://spectrum-os.org/git/spectrum"
+      }
+    },
+    "spectrum_4": {
       "flake": false,
       "locked": {
         "lastModified": 1772189877,

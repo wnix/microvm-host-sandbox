@@ -1,236 +1,213 @@
 # micro-vm-template (host / hypervisor)
 
-Standalone Nix flake: builds and runs a **NixOS microvm** (via [microvm.nix](https://github.com/microvm-nix/microvm.nix)) for an isolated, reproducible sandbox. The **hypervisor** definition lives only in this repository and is **not** shared with the guest.
+Standalone Nix flake: builds and runs a **NixOS microvm** (via [microvm.nix](https://github.com/microvm-nix/microvm.nix)) for an isolated, reproducible sandbox. The **hypervisor** definition lives only in this repository and is **not** bind-mounted as the guest’s editable system config.
 
-The **guest** edits its own NixOS config in a **separate** git repository, bind-mounted at `/home/agent/system-config` inside the VM.
+The **guest** uses a **separate** git repository (flake input `guestConfig`), checked out under `./sandbox-guest-config/` by default, bind-mounted at `/home/agent/system-config` inside the VM.
 
 ## Why two repositories?
 
-1. **Security:** The guest must not see the VM layout, port forwards, or host paths in this repo. Only the guest-config repo is shared into the guest.
-2. **Lifecycle:** You commit to this repo on the host; the agent can `git commit` / `git push` the guest config from inside the VM.
-3. **Pluggable guest:** Because the guest is just a git submodule, you can swap it for any NixOS flake that follows the wiring contract. Different teams or use-cases get different starting points with zero changes to the host.
+1. **Security:** The guest must not see the full host flake (QEMU layout, extra host paths). Only the guest repo is shared read-write for the agent; the host flake is additionally shared **read-only** at `/run/microvm-host` so in-VM `nixos-rebuild` uses the same wiring the hypervisor runs.
+2. **Lifecycle:** You commit on the host; the agent can `git commit` / `git push` the guest config from inside the VM.
+3. **Pluggable guest:** Swap the guest flake (template or fork) with `--guest-config` or by changing the `guestConfig` input pin in `flake.lock`. The contract is: exports `userConfig` (from `config.nix`) and `nixosModules.profile`.
 
 ## Guest templates
 
-The host repo is a fixed hypervisor shell. The **guest** is what changes between projects. Pick a starting point:
-
 | Template | What's included | Status |
 |---|---|---|
-| [`wnix/microvm-guest-template`](https://github.com/wnix/microvm-guest-template) | Base NixOS guest: git, zsh, dev tools, nix flakes, `agent` user | ✅ available |
-| `wnix/microvm-guest-claude` | Everything above + Claude Code, OpenClaw, SKILL files pre-configured | 🚧 coming soon |
+| [`wnix/microvm-guest-template`](https://github.com/wnix/microvm-guest-template) | Base NixOS guest: git, zsh, dev tools, nix flakes, `agent` user | available |
+| `wnix/microvm-guest-claude` | Everything above + Claude Code, OpenClaw, SKILL files | coming soon |
 
-Adding a new template is just a `git submodule add` — the QEMU hardware layer never changes.
+Adding a custom guest is a **flake input** (and optional local checkout), not a submodule.
 
-## Setup — two paths to a running sandbox
+## Setup
 
 ### Path A — Nix flake template (recommended)
 
-Use this when you want a blank-slate host and/or guest that you can push to your own git remote.
-
 ```bash
-# 1. Bootstrap the host repo
 mkdir my-sandbox-host && cd my-sandbox-host
 nix flake init --template github:wnix/microvm-host-sandbox#agent-sandbox
 git init && git add -A && git commit -m "init host"
-
-# 2. Pick a guest template and bootstrap it as its own repo
-mkdir ../my-sandbox-guest && cd ../my-sandbox-guest
-nix flake init --template github:wnix/microvm-guest-template   # base
-# -- or, once available --
-# nix flake init --template github:wnix/microvm-guest-claude   # + Claude Code / OpenClaw
-git init && git add -A && git commit -m "init guest"
-
-# 3. Push both to your own remotes, then wire guest as submodule of host:
-cd ../my-sandbox-host
-git submodule add git@github.com:my-org/my-sandbox-guest.git sandbox-guest-config
-git add .gitmodules sandbox-guest-config
-git commit -m "add guest config submodule"
 ```
 
-### Path B — GitHub template (click-ops)
+### Path B — GitHub template
 
-1. Press **"Use this template"** on [`wnix/microvm-host-sandbox`](https://github.com/wnix/microvm-host-sandbox) → creates `my-org/my-sandbox-host`
-2. Press **"Use this template"** on [`wnix/microvm-guest-template`](https://github.com/wnix/microvm-guest-template) → creates `my-org/my-sandbox-guest`
-3. Wire them:
-
-   ```bash
-   git clone git@github.com:my-org/my-sandbox-host.git
-   cd my-sandbox-host
-   git submodule add git@github.com:my-org/my-sandbox-guest.git sandbox-guest-config
-   git add .gitmodules sandbox-guest-config && git commit -m "add guest config submodule"
-   ```
-
-### Clone an existing setup (with submodule)
+Use **Use this template** on [`wnix/microvm-host-sandbox`](https://github.com/wnix/microvm-host-sandbox), clone your copy, then:
 
 ```bash
-git clone --recurse-submodules git@github.com:my-org/my-sandbox-host.git
+cd my-sandbox-host
+nix flake lock   # pins guestConfig to github:wnix/microvm-guest-template
 ```
 
-If you forgot `--recurse-submodules`:
+### Clone an existing host repo
 
 ```bash
-git submodule update --init
+git clone git@github.com:my-org/my-sandbox-host.git
+cd my-sandbox-host
 ```
 
 ---
 
-### Run and connect
+## Run and connect
+
+From the host repo root:
 
 ```bash
-# From the host repo root (launcher auto-detects ./sandbox-guest-config)
 nix run .#sandbox
 ```
 
-SSH in (default: host port 2222 → guest port 22):
+The launcher clones the default guest into `./sandbox-guest-config/` if it is missing, then runs the VM with `--impure` and `--override-input guestConfig` so your **local** checkout is what Nix evaluates (matches the 9p mount).
+
+SSH (default: host port 2222 → guest 22):
 
 ```bash
 ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -p 2222 agent@127.0.0.1
 ```
 
-No SSH key in `vm.agentSshKeys`? The default dev password is `agent`.
+No SSH key in `vm.agentSshKeys` (guest `config.nix`)? The default dev password is `agent`.
 
-Apply or update the guest NixOS config from inside the VM:
+### Apply guest config from inside the VM
+
+Prefer the wrapper (uses the host flake mounted at `/run/microvm-host`):
 
 ```bash
-sudo nixos-rebuild switch --flake /home/agent/system-config
-# rollback:
+sudo nixos-rebuild-sandbox switch
+```
+
+Equivalent:
+
+```bash
+sudo nixos-rebuild switch --flake /home/agent/system-config \
+  --override-input microvmHost path:/run/microvm-host
+```
+
+Rollback:
+
+```bash
 sudo nixos-rebuild switch --rollback
 ```
 
-### Use a different guest config without editing anything
+### Use a different guest
+
+Local path:
 
 ```bash
-nix run .#sandbox -- --guest-config /absolute/path/to/any-guest-config
+nix run .#sandbox -- --guest-config /absolute/path/to/guest-flake
 ```
 
-### The submodule as a deployment primitive
-
-The power of the submodule model: an agent works inside the VM, makes NixOS commits to `/home/agent/system-config` (which is the host-side `sandbox-guest-config/` checkout), and pushes. On the host you pin the new state by bumping the submodule:
+GitHub shorthand (clones into `./sandbox-guest-config/`):
 
 ```bash
-cd sandbox-guest-config && git pull   # fast-forward to agent's work
-cd ..
-git add sandbox-guest-config
-git commit -m "pin guest config to latest agent checkpoint"
+nix run .#sandbox -- --guest-config github:my-org/my-guest
 ```
 
-Anyone who clones the host repo with `--recurse-submodules` gets an exact, reproducible replay of the same guest state.
+### Pin the guest revision (host)
+
+After the agent pushed guest changes and you want a reproducible pin:
+
+```bash
+nix flake lock --update-input guestConfig
+git add flake.lock && git commit -m "pin guestConfig"
+```
+
+Anyone who clones this host repo gets the same guest revision from `flake.lock`.
+
+### Developing host and guest side by side
+
+If `flake.lock` still points at **path** inputs from a previous `nix flake lock --override-input …` on your machine, regenerate a **portable** lock once both repos are on GitHub:
+
+```bash
+nix flake lock --update-input guestConfig
+```
+
+For a sibling checkout **before** that publish, from the host directory:
+
+```bash
+nix flake lock \
+  --override-input guestConfig "path:$(pwd)/../sandbox-guest-config"
+```
+
+---
 
 ## Layout (this repo)
 
-- `config.nix` — sole **user** knob file: CPUs, memory, disk size, ports, extra `hostMounts`, hypervisor. No absolute paths required — the launcher auto-detects the `sandbox-guest-config` submodule.
-- `vm/microvm-wiring.nix` — `microvm` options (9p shares, overlay volume) shared conceptually with the **guest** repo; see [Keeping the two repos in sync](#keeping-the-two-repos-in-sync).
-- `vm/base-system.nix` — `agent` user, SSH, dev tools, Nix settings.
-- `vm/overlay-store.nix` — extra nix `substituters` for the read-only store share.
-- `vm/default.nix` — wires the above and one-shot `agent-bootstrap`.
-- `templates/guest-config/` — starter **guest** flake; copy to a new repo, do **not** bind-mount this template directory for production.
+| Path | Role |
+|---|---|
+| [flake.nix](flake.nix) | Inputs (`guestConfig`, `microvm`, `nixpkgs`), `nixosConfigurations.sandbox`, launcher `apps.sandbox` |
+| [modules/wiring.nix](modules/wiring.nix) | **Single** `microvm` wiring (9p shares, volumes, ports) — exported as `nixosModules.wiring` |
+| `flake.lock` | Pin for `guestConfig` (and transitive inputs) |
+
+Guest-side OS (users, SSH, packages, bootstrap) lives in the **guest** repo as `nixosModules.profile`.
+
+`./sandbox-guest-config/` is created by the launcher and listed in `.gitignore` so the default working tree is not committed.
 
 ## Architecture
 
 ```mermaid
 %%{init: {"flowchart": {"htmlLabels": false}} }%%
 flowchart TD
-    subgraph GH["GitHub — pick a guest template"]
-        GT0["wnix/microvm-guest-template\nbase: git · zsh · dev tools · nix flakes"]
-        GT1["wnix/microvm-guest-claude  (coming soon)\n+ Claude Code · OpenClaw · SKILL files"]
-        GTN["your-org/custom-guest\nany NixOS flake that follows the wiring contract"]
+    subgraph GH["GitHub — guest templates"]
+        GT0["wnix/microvm-guest-template"]
+        GTN["your-org/custom-guest"]
     end
 
-    subgraph Local["Host machine  —  my-sandbox-host/"]
-        FLAKE["flake.nix + config.nix + vm/\nhypervisor layer — never exposed to guest"]
-        SUB["sandbox-guest-config/\ngit submodule · pinned commit"]
-        IMG["nix-rw-store.img\next4 image · persists across reboots"]
+    subgraph Local["Host machine — my-sandbox-host/"]
+        FLAKE["flake.nix + modules/wiring.nix"]
+        LOCK["flake.lock pins guestConfig"]
+        DIR["./sandbox-guest-config/ local checkout"]
+        IMG["nix-rw-store.img"]
     end
 
-    GH -->|"nix flake init --template\nor GitHub template + fork"| SUB
-    FLAKE -->|"nix run .#sandbox\nauto-detects submodule"| VM
+    GH -->|"flake input / clone"| DIR
+    FLAKE --> LOCK
+    FLAKE -->|"nix run .#sandbox"| VM
 
-    subgraph VM["QEMU  —  NixOS guest"]
-        RO["/nix/.ro-store\n9p read-only\n← host /nix/store"]
-        RW["/nix/.rw-store\n9p read-write\n← nix-rw-store.img"]
-        OV["/nix/store\noverlayfs\nlower = .ro-store · upper = .rw-store"]
-        SC["/home/agent/system-config\n9p read-write\n← sandbox-guest-config/"]
+    subgraph VM["QEMU — NixOS guest"]
+        RO["/nix/.ro-store 9p ro"]
+        RW["/nix/.rw-store 9p rw"]
+        OV["/nix/store overlayfs"]
+        SC["/home/agent/system-config 9p rw"]
+        HF["/run/microvm-host 9p ro — host flake"]
         RO --> OV
         RW --> OV
     end
 
-    IMG -->|"9p share  rw"| RW
-    SUB -->|"9p share  rw"| SC
+    IMG --> RW
+    DIR --> SC
+    FLAKE -.-> HF
 
-    SC -->|"agent: git commit · git push\nfrom inside the VM"| SUB
-    SUB -->|"host: git add sandbox-guest-config\npin submodule to new HEAD"| FLAKE
+    SC -->|"git commit / push"| DIR
+    LOCK -->|"pin"| FLAKE
 ```
 
-- **Root filesystem** is tmpfs; persistent state lives in `/nix/.rw-store` (ext4 image), the bind-mounted guest config, and any `vm.hostMounts`.
-- **Nix store overlay:** host `/nix/store` is shared read-only; packages built inside the guest land in the rw upper layer — the host store is never written.
-- **Guest templates are pluggable:** the 9p wiring (share tags, volume name, port forwards) is the only contract between host and guest. Swap the submodule for any template that honours it.
+- **Root filesystem** is tmpfs; persistent state: `/nix/.rw-store`, the guest checkout, and optional `vm.hostMounts` (guest `config.nix`).
+- **Nix store overlay:** host `/nix/store` is the lower layer; builds in the guest use the writable upper layer.
+- **Wiring:** only [modules/wiring.nix](modules/wiring.nix); the guest imports it via `inputs.microvmHost.nixosModules.wiring` (GitHub pin or `/run/microvm-host` override in the VM).
 
 ## Configuration notes
 
 | Topic | Notes |
 |--------|--------|
-| **Hypervisor** | Default is **Qemu** with user networking, because [microvm.nix only implements `forwardPorts` for `qemu` + `user` interfaces](https://microvm-nix.github.io/microvm.nix/). `cloud-hypervisor` is faster but you must bring your own network/port-forward story (e.g. tap + static IP, or a socat/SSH recipe). Set `vm.hypervisor` in `config.nix` accordingly. |
-| **Nix** | `auto-optimise-store` is **not** enabled: microvm.nix disallows it together with a writable store overlay. |
-| **KVM in guest** | The `agent` user is in the `kvm` group and modprobe lines enable **nested** KVM for `nixos-rebuild build-vm` / `nixos-test` (when the CPU/hypervisor allows it). |
+| **VM knobs** | Edit **`config.nix` in the guest repo** (`vm.cpus`, `vm.memoryMiB`, `vm.diskSizeGiB`, `vm.forwardedPorts`, `vm.hypervisor`, `vm.hostMounts`, …). |
+| **Hypervisor** | Default **Qemu** + user networking ([`forwardPorts` supported](https://microvm-nix.github.io/microvm.nix/)). |
+| **Nix** | Do not enable `auto-optimise-store` with a writable store overlay (microvm.nix restriction). |
+| **KVM in guest** | `agent` is in `kvm`; nested KVM is enabled for `nixos-rebuild build-vm` / `nixos-test` when the CPU allows it. |
 
-## `systemd` on the (Linux) host
+## systemd on the (Linux) host
 
-The generated runner is a normal package; you can install it as a user/system unit if you use the microvm host module elsewhere. This template does **not** require host NixOS: `nix run` is enough. See the microvm.nix book for `microvm@` service patterns on NixOS hosts.
+The runner is a normal package; host NixOS is not required. See the microvm.nix docs for `microvm@` service patterns.
 
-## Verify isolation (guest cannot see the host template)
+## Verify isolation
 
-In the **guest** (SSH):
+Inside the guest you should see: `/home/agent/system-config` (guest repo), `/run/microvm-host` (host flake, read-only), the Nix store layout, `/nix/.rw-store`, and any configured extra mounts — not the full host home directory unless you mounted it via `vm.hostMounts`.
 
-- You should only see: `ls /home/agent/system-config` (your **guest** repo), the usual Nix store and `/nix/.rw-store`, and your configured extra mounts.
+## Disk size warning
 
-## Keeping the two repos in sync
-
-Both repos carry files that describe the **same virtual hardware**, but from different perspectives:
-
-| File (host) | File (guest) | What it controls |
-|---|---|---|
-| `config.nix` | `config.nix` | CPU count, RAM, disk size, port forwards, hypervisor |
-| `vm/microvm-wiring.nix` | `microvm-wiring.nix` | 9p share **tags**, volume name, mount-points, overlay path |
-
-The **host** copy is what QEMU actually runs. The **guest** copy is what `nixos-rebuild switch` bakes into the guest's own NixOS closure (fstab entries, systemd mount units, kernel arguments, firewall rules). If they diverge, the VM can still boot — but `nixos-rebuild switch` inside the VM will apply a config that no longer matches the running hypervisor.
-
-### What *must* stay identical on both sides
-
-- **9p share tags** (`ro-store`, `guest-cfg`, `hmount-0`, …) — QEMU exports each share under a tag; the guest kernel mounts it by that tag. A mismatch means the mount silently hangs or fails.
-- **Volume image name** (`nix-rw-store.img`) and **mount point** (`/nix/.rw-store`) — the writable overlay volume. Name mismatch → QEMU presents a disk the guest doesn't mount; point mismatch → the Nix overlay has no upper layer.
-- **`writableStoreOverlay`** path in `microvm-wiring.nix` — must equal the volume's `mountPoint` on both sides.
-- **Port numbers** in `vm.forwardedPorts` — the host side determines what QEMU maps; the guest side determines what the firewall opens. A missing guest-side entry means the port is forwarded by QEMU but blocked by `iptables` inside the VM (and vice versa: a guest-side `allowedTCPPorts` for a port not forwarded by the host is harmless but misleading).
-
-### What can safely differ
-
-- Comments, ordering, and any option that does **not** affect the kernel mount table or the QEMU command line.
-- `vm.agentSshKeys` / `vm.hostNixStorePath` — guest-only or host-only semantics; no cross-side contract.
-
-### Change procedure
-
-1. **Edit the host** (`config.nix` and/or `vm/microvm-wiring.nix`).
-2. **Mirror the change** to the guest repo (`config.nix` and/or `microvm-wiring.nix`); commit both.
-3. **Stop the running VM** (Ctrl-C or `systemctl stop microvm@sandbox` if using the host module).
-4. **Rebuild and restart** from this repo:
-   ```bash
-   nix run .#sandbox
-   ```
-5. *(Optional)* Inside the guest, apply the new guest config:
-   ```bash
-   sudo nixos-rebuild switch --flake /home/agent/system-config
-   ```
-
-### Disk size warning
-
-`vm.diskSizeGiB` controls the size of `nix-rw-store.img` **only at creation time** (`autoCreate = true`). An already-existing image is never resized automatically. If you increase the disk size, you must either:
-
-- Delete `nix-rw-store.img` before the next boot (losing any packages built inside the VM), then let it be recreated, or
-- Resize it offline with `e2fsck -f` + `resize2fs`.
+`vm.diskSizeGiB` (guest `config.nix`) sets `nix-rw-store.img` size **only when the image is first created**. To grow: delete the image (losing built paths in the guest) or resize offline with `e2fsck -f` and `resize2fs`.
 
 ## Known limitations
 
-- Port forwards require the **Qemu** + **user** networking stack; see the Configuration notes table.
+- Port forwards need **Qemu** + **user** networking for the stock `forwardPorts` story.
 
 ## License
 
-This template layout is for reuse in your own projects; apply your preferred license.
+Reuse in your own projects; apply your preferred license.

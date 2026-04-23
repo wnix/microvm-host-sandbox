@@ -1,0 +1,3 @@
+[submodule "sandbox-guest-config"]
+	path = sandbox-guest-config
+	url = git@github.com:wnix/microvm-guest-template.git

@@ -1,35 +1,40 @@
-# User-facing sandbox knobs. Fork or branch the repo, edit this, then run
-# `nix run .#sandbox` — no other files should be required for basic reshaping.
+# User-facing sandbox knobs. Edit this file, then `nix run .#sandbox`.
+# No other files need touching for basic reshaping.
 {
   # --- Resources (microvm / QEMU) ---
   vm.cpus = 4;
   vm.memoryMiB = 4096;
-  # Writable /nix overlay backing volume (MiB) — nix-daemon new store paths
+  # Writable /nix/.rw-store overlay volume — keeps built packages across reboots
   vm.diskSizeGiB = 40;
 
-  # --- SSH: paste your *host* public key (same key you will use: ssh -p <port> agent@127.0.0.1) ---
-  # Example: (builtins.readFile /home/yourname/.ssh/id_ed25519.pub) — only if the path is non-secret.
+  # --- SSH: paste your host public key (ssh -p <hostPort> agent@127.0.0.1) ---
+  # Example: vm.agentSshKeys = [ "ssh-ed25519 AAAA..." ];
+  # Without a key, the account password defaults to "agent" (dev only).
   vm.agentSshKeys = [
   ];
 
-  # --- Network: host TCP → guest TCP (requires QEMU + user networking; see vm/default.nix) ---
+  # --- Network: host TCP → guest TCP (QEMU user-networking) ---
   vm.forwardedPorts = [
     { hostPort = 2222; guestPort = 22; }
     { hostPort = 8085; guestPort = 8080; }
   ];
 
-  # --- Guest NixOS flake repo on the host: bind-mounted rw at /home/agent/system-config in the guest ---
-  vm.guestConfigPath = "/home/basti/daten/Entwicklung/micro-vms/sandbox-guest-config";
+  # --- Guest config path (optional override) ---
+  # By default the launcher detects ./sandbox-guest-config (git submodule).
+  # Uncomment to hard-code a different path, or use:
+  #   nix run .#sandbox -- --guest-config /absolute/path
+  # vm.guestConfigPath = "/absolute/path/to/your/guest-config";
 
-  # --- Extra host directories inside the guest (optional) ---
+  # --- Extra host directories mounted into the guest (optional) ---
   vm.hostMounts = [
     # { hostPath = "/home/user/projects"; guestPath = "/mnt/projects"; readOnly = false; }
   ];
 
-  # Host nix store path (read-only share + overlay lower); keep default
+  # Host nix store (read-only 9p share + overlay lower layer); keep default
   vm.hostNixStorePath = "/nix/store";
 
-  # --- Hypervisor: microvm.nix only applies forwardPorts for "qemu" + "user" networking.
-  # cloud-hypervisor is faster but then you must bridge/tap and SSH to the guest IP (no automatic port forward).
+  # --- Hypervisor ---
+  # "qemu" supports forwardPorts out of the box; "cloud-hypervisor" is faster
+  # but requires tap networking and manual SSH routing.
   vm.hypervisor = "qemu";
 }

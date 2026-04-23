@@ -1,10 +1,19 @@
 { lib, pkgs, userConfig, ... }:
 let
   guestPath =
-    if (builtins.getEnv "MICROVM_GUEST_CONFIG") != "" then
-      (builtins.getEnv "MICROVM_GUEST_CONFIG")
-    else
-      userConfig.vm.guestConfigPath;
+    let
+      fromEnv = builtins.getEnv "MICROVM_GUEST_CONFIG";
+      fromCfg = userConfig.vm.guestConfigPath or null;
+    in
+      if fromEnv != "" then fromEnv
+      else if fromCfg != null then fromCfg
+      else throw ''
+        No guest-config path found. Choose one of:
+          1. Run via `nix run .#sandbox` (auto-detects ./sandbox-guest-config submodule)
+          2. `nix run .#sandbox -- --guest-config /absolute/path`
+          3. Set vm.guestConfigPath in config.nix
+          4. export MICROVM_GUEST_CONFIG=/path; nix run --impure .#sandbox-vm
+      '';
   wiring = import ./microvm-wiring.nix { inherit lib userConfig guestPath; };
   # Inline so `nix build` / flakes work before `git add` of agent-bootstrap.sh
   agentBootstrap = pkgs.writeShellScript "agent-bootstrap" ''
